@@ -1,4 +1,8 @@
-streamlit==1.39.0
-PyPDF2==3.0.1
-transformers
-torch
+fastapi
+uvicorn
+openai
+streamlit
+PyPDF2
+faiss-cpu
+sentence-transformers
+requests
