@@ -1,28 +1,27 @@
 import os
+import openai
 import PyPDF2
 import faiss
-import openai
 import streamlit as st
 import numpy as np
-from sentence_transformers import SentenceTransformer
-from openai.embeddings_utils import get_embedding
-# Set your OpenAI key from environment or directly here
+
+# Set your OpenAI key (or use env var)
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 st.set_page_config(page_title="Neurology Book Q&A")
-st.title("🧠 Ask Anything About Your Neurology Book")
+st.title("📘 Ask Questions About the Neurology Book")
 
-# ------------------ PDF & Embedding Setup ------------------
+# ------------------- Load and Process PDF -------------------
 
 @st.cache_resource
-def load_book(path):
-    reader = PyPDF2.PdfReader(open(path, "rb"))
+def load_book(pdf_path):
+    reader = PyPDF2.PdfReader(open(pdf_path, "rb"))
     raw_chunks = []
     for page_num, page in enumerate(reader.pages):
         text = page.extract_text()
         if not text:
             continue
-        lines = text.split('\n')
+        lines = text.split("\n")
         for i, line in enumerate(lines):
             if line.strip():
                 raw_chunks.append({
@@ -33,8 +32,13 @@ def load_book(path):
     return raw_chunks
 
 @st.cache_resource
-def embed_chunks_openai(raw_chunks, max_tokens=80):
-    from openai.embeddings_utils import get_embedding
+def embed_chunks(raw_chunks, max_tokens=80):
+    def get_openai_embedding(text):
+        response = openai.Embedding.create(
+            input=text,
+            model="text-embedding-ada-002"
+        )
+        return np.array(response["data"][0]["embedding"])
 
     chunks, metadata = [], []
     buffer, meta_buffer, tokens = "", [], 0
@@ -59,73 +63,63 @@ def embed_chunks_openai(raw_chunks, max_tokens=80):
         chunks.append(buffer.strip())
         metadata.append(meta_buffer)
 
-    # Use OpenAI API to get embeddings
-    def get_openai_embedding(text):
-        res = openai.Embedding.create(
-            input=text,
-            model="text-embedding-ada-002"
-        )
-        return np.array(res["data"][0]["embedding"])
-
-    embeddings = np.array([get_openai_embedding(chunk) for chunk in chunks])
+    embeddings = np.array([get_openai_embedding(c) for c in chunks])
     index = faiss.IndexFlatL2(embeddings.shape[1])
     index.add(embeddings)
 
     return chunks, metadata, index
 
-# Load PDF and process
-raw_chunks = load_book("book.pdf")
-chunks, chunk_metadata, faiss_index = embed_chunks_openai(raw_chunks)
+# ------------------- Search + GPT Answer -------------------
 
+def get_context(question, top_k=5, max_tokens=3000):
+    q_embedding = openai.Embedding.create(input=question, model="text-embedding-ada-002")["data"][0]["embedding"]
+    D, I = index.search(np.array([q_embedding]), k=top_k)
 
-# ------------------ Question Answering ------------------
-
-def get_relevant_context(question, top_k=5, max_context_tokens=3000):
-    q_vector = embed_model.encode([question])
-    D, I = faiss_index.search(np.array(q_vector), k=top_k)
-
-    selected_chunks = []
+    context_parts = []
     references = []
     total_tokens = 0
 
     for i in I[0]:
         chunk = chunks[i]
-        meta = chunk_metadata[i]
         chunk_tokens = len(chunk.split())
-        if total_tokens + chunk_tokens > max_context_tokens:
+        if total_tokens + chunk_tokens > max_tokens:
             break
-        selected_chunks.append(chunk)
+        context_parts.append(chunk)
+        meta = metadata[i]
         if meta:
             start = meta[0]
             end = meta[-1]
-            ref = f"Page {start['page']}, Line {start['line']}-{end['line']}"
-            references.append(ref)
+            references.append(f"Page {start['page']}, Line {start['line']}-{end['line']}")
         total_tokens += chunk_tokens
 
-    return "\n\n".join(selected_chunks), references
+    return "\n\n".join(context_parts), references
 
 def ask_openai(context, question):
     messages = [
         {"role": "system", "content": "You are a helpful assistant with access to a neurology textbook."},
         {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}"}
     ]
-
     response = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
         messages=messages,
-        max_tokens=500,
         temperature=0.5,
+        max_tokens=500
     )
     return response.choices[0].message["content"].strip()
 
-# ------------------ Streamlit UI ------------------
+# ------------------- Run Streamlit -------------------
 
-question = st.text_input("💬 Ask a question about the book:")
-if st.button("Ask") and question:
-    with st.spinner("Searching and answering..."):
-        context, refs = get_relevant_context(question)
-        answer = ask_openai(context, question)
+if not os.path.exists("book.pdf"):
+    st.error("Please upload your book as book.pdf.")
+else:
+    raw_chunks = load_book("book.pdf")
+    chunks, metadata, index = embed_chunks(raw_chunks)
 
-        st.success(answer)
-        if refs:
-            st.info("📄 References: " + "; ".join(refs))
+    question = st.text_input("💬 Ask a question:")
+    if st.button("Ask") and question:
+        with st.spinner("Finding answer..."):
+            context, refs = get_context(question)
+            answer = ask_openai(context, question)
+            st.success(answer)
+            if refs:
+                st.info("📄 Sources: " + "; ".join(refs))
