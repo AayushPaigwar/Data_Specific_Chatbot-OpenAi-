@@ -33,8 +33,9 @@ def load_book(path):
     return raw_chunks
 
 @st.cache_resource
-def embed_chunks(raw_chunks, max_tokens=80):
-    model = SentenceTransformer("all-MiniLM-L6-v2")
+def embed_chunks_openai(raw_chunks, max_tokens=80):
+    from openai.embeddings_utils import get_embedding
+
     chunks, metadata = [], []
     buffer, meta_buffer, tokens = "", [], 0
 
@@ -58,15 +59,24 @@ def embed_chunks(raw_chunks, max_tokens=80):
         chunks.append(buffer.strip())
         metadata.append(meta_buffer)
 
-    vectors = model.encode(chunks)
-    index = faiss.IndexFlatL2(vectors.shape[1])
-    index.add(np.array(vectors))
+    # Use OpenAI API to get embeddings
+    def get_openai_embedding(text):
+        res = openai.Embedding.create(
+            input=text,
+            model="text-embedding-ada-002"
+        )
+        return np.array(res["data"][0]["embedding"])
 
-    return chunks, metadata, index, model
+    embeddings = np.array([get_openai_embedding(chunk) for chunk in chunks])
+    index = faiss.IndexFlatL2(embeddings.shape[1])
+    index.add(embeddings)
+
+    return chunks, metadata, index
 
 # Load PDF and process
 raw_chunks = load_book("book.pdf")
-chunks, chunk_metadata, faiss_index, embed_model = embed_chunks(raw_chunks)
+chunks, chunk_metadata, faiss_index = embed_chunks_openai(raw_chunks)
+
 
 # ------------------ Question Answering ------------------
 
