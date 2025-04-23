@@ -97,9 +97,13 @@ def get_context(question, top_k=5, max_tokens=3000):
 def ask_openai(context, question):
     messages = [
         {
-  "role": "user",
-  "content": f"""
-You are an expert medical assistant helping a neurology student understand a textbook. Based on the provided context, answer the question in a clear, detailed, and structured way.
+            "role": "system",
+            "content": "You are an expert medical assistant helping a neurology student understand a textbook."
+        },
+        {
+            "role": "user",
+            "content": f"""
+Based on the provided context, answer the question in a clear, detailed, and structured way.
 
 - If possible, break down the answer into **bullet points**.
 - Be concise, but informative.
@@ -115,14 +119,13 @@ Question:
 
 Answer in detailed points:
 """
-},
-        {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}"}
+        }
     ]
     response = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
         messages=messages,
         temperature=0.5,
-        max_tokens=500
+        max_tokens=700
     )
     return response.choices[0].message["content"].strip()
 
