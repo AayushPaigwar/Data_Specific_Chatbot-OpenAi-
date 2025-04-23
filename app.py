@@ -5,7 +5,7 @@ import openai
 import streamlit as st
 import numpy as np
 from sentence_transformers import SentenceTransformer
-
+from openai.embeddings_utils import get_embedding
 # Set your OpenAI key from environment or directly here
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
