@@ -96,7 +96,26 @@ def get_context(question, top_k=5, max_tokens=3000):
 
 def ask_openai(context, question):
     messages = [
-        {"role": "system", "content": "You are a helpful assistant with access to a neurology textbook."},
+        {
+  "role": "user",
+  "content": f"""
+You are an expert medical assistant helping a neurology student understand a textbook. Based on the provided context, answer the question in a clear, detailed, and structured way.
+
+- If possible, break down the answer into **bullet points**.
+- Be concise, but informative.
+- Only use information supported by the context.
+- Do not add external information.
+- If the question cannot be answered from the context, say: "The answer is not available in the provided context."
+
+Context:
+{context}
+
+Question:
+{question}
+
+Answer in detailed points:
+"""
+},
         {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}"}
     ]
     response = openai.ChatCompletion.create(
