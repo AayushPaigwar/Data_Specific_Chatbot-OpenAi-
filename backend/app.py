@@ -6,10 +6,12 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
 from fastapi.middleware.cors import CORSMiddleware
-
+import os
+from dotenv import load_dotenv
+import streamlit as st
+load_dotenv()
 # Set your OpenAI API key
-openai.api_key = "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"
-
+openai.api_key = st.secrets["OPENAI_API_KEY"]
 app = FastAPI()
 
 # Allow Streamlit frontend to access FastAPI backend
